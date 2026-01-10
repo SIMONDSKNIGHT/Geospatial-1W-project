@@ -1,0 +1,13 @@
+services:
+  db:
+    platform: linux/amd64
+    image: postgis/postgis:15-3.5 
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: psql
+      POSTGRES_PASSWORD: password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+volumes:
+  pgdata:
