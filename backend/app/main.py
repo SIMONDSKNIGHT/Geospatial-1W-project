@@ -3,6 +3,7 @@ from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import psycopg
+from psycopg_pool import ConnectionPool
 
 
 
@@ -19,8 +20,9 @@ DB_URL = os.environ.get("DB_URL", "postgresql://psql:password@db:5432/mydatabase
 def health_check():
     return {"status": "ok"}
 
+pool = ConnectionPool(conninfo=DB_URL, min_size=1, max_size=10)
 def get_db_connection():
-    return psycopg.connect(DB_URL)
+    return pool.connection()
 
 @app.get("/tiles/{z}/{x}/{y}.pbf")
 def get_tile(z: int, x: int, y: int):
@@ -38,7 +40,7 @@ WITH
             ) AS geom
         FROM public.points
         CROSS JOIN env
-        WHERE public.points.geom && env.geom_4326 AND ST_Intersects(public.points.geom, env.geom_4326)
+        WHERE public.points.geom && env.geom_4326 -- AND ST_Intersects(public.points.geom, env.geom_4326)
     )
 SELECT ST_AsMVT(temp.*, 'points', 4096, 'geom') AS mvt FROM temp;
     """
