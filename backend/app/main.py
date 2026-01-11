@@ -1,8 +1,17 @@
 import os
 from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 
 app = FastAPI()
+# Just for testing
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 DB_URL = os.environ.get("DB_URL", "postgresql://psql:password@db:5432/mydatabase")
 
