@@ -127,7 +127,7 @@ Serving frontend assets from the backend simplifies deployment and aligns with t
 
 Generate the 100k points first throught the script in scripts
 ```bash
-python scripts/generator.py --n 100000 --center-lat 51.5074 --center-lon -0.1278 --std-km 10  --out tmp/points_100k.csv --seed 42
+python scripts/generator.py --n 100000 --center-lat 51.5074 --center-lon -0.1278 --std-km 10  --output-file data/points_100k.csv --seed 42
 ```
 
 run the below on the TAKEHOMEGDV directory to create dockerised db and backend.
