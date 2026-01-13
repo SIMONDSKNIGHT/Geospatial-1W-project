@@ -5,7 +5,8 @@ from fastapi.staticfiles import StaticFiles
 import psycopg
 from psycopg_pool import ConnectionPool
 
-
+CENTER_LON = -0.1278
+CENTER_LAT = 51.5074
 
 app = FastAPI()
 # Just for testing
@@ -32,12 +33,17 @@ WITH
         SELECT ST_TileEnvelope(%s, %s, %s) AS geom_3857,
                ST_Transform(ST_TileEnvelope(%s, %s, %s), 4326) AS geom_4326
     ),
-    temp AS (
-        SELECT
-            id,
-            ST_AsMVTGeom(
-                ST_Transform(geom, 3857), env.geom_3857, 4096, 0, true
-            ) AS geom
+temp AS (
+    SELECT
+        id,
+        -- this is HARDCODED to London for the takehome
+        ST_DistanceSphere(
+            public.points.geom,
+            ST_SetSRID(ST_MakePoint(%s, %s), 4326)
+        ) AS dist_m,
+        ST_AsMVTGeom(
+            ST_Transform(geom, 3857), env.geom_3857, 4096, 0, true
+        ) AS geom
         FROM public.points
         CROSS JOIN env
         WHERE public.points.geom && env.geom_4326 -- AND ST_Intersects(public.points.geom, env.geom_4326)
@@ -46,7 +52,7 @@ SELECT ST_AsMVT(temp.*, 'points', 4096, 'geom') AS mvt FROM temp;
     """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (z, x, y, z, x, y))
+            cur.execute(sql, (z, x, y, z, x, y, CENTER_LON, CENTER_LAT))
             row = cur.fetchone()
             mvt_data = row[0] if row and row[0] else None
         if not mvt_data:

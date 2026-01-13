@@ -144,4 +144,6 @@ Differences in performance from my own may arise from the platform (likely impro
 ## Section on bonus task
 
 
-- currently uncompleted
+### Implementation
+
+Not the cleanest: The points are hardcoded into the main.py as the variables **CENTER_LON** and **CENTER_LAT**, and cannot be changed without a full restart of the environment. Potentially in a full implementation it would make sense to have a settings table that could be changed and then injected into the query, or a point determined and dynamically changed with the distances changing with. An alternative solution was to precalculate the value, but as these would only calculate for 1 point each time, I thought calculating it through the query was not a poor compromise.

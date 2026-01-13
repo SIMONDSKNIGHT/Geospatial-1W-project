@@ -36,4 +36,18 @@ map.on("load", () => {
 
 
 });
-/**/ 
+map.on("click", "points-layer", (e) => {
+  const f = e.features?.[0];
+  if (!f) return;
+
+  const km = (Number(f.properties.dist_m) / 1000).toFixed(2);
+
+  new maplibregl.Popup()
+    .setLngLat(e.lngLat)
+    .setHTML(`<b>Distance to center:</b> ${km} km<br/><b>ID:</b> ${f.properties.id}`)
+    .addTo(map);
+});
+map.on("mouseenter", "points-layer", () => map.getCanvas().style.cursor = "pointer");
+map.on("mouseleave", "points-layer", () => map.getCanvas().style.cursor = "");
+
+
