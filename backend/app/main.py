@@ -3,7 +3,7 @@ import time
 from collections import OrderedDict
 from threading import Lock
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Query, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from psycopg_pool import ConnectionPool
@@ -63,10 +63,13 @@ def serve_index():
     return FileResponse("frontend/index.html")
 
 
+
 @app.get("/health")
 def health_check():
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
     return {"status": "ok"}
-
 
 # ----- Database connection pool -----
 pool = ConnectionPool(conninfo=DB_URL, min_size=1, max_size=10)
@@ -77,8 +80,8 @@ def get_db_connection():
 
 
 @app.get("/tiles/{z}/{x}/{y}.pbf")
-def get_tile(z: int, x: int, y: int):
-    key = (z, x, y)
+def get_tile(z: int, x: int, y: int, mode: str = Query("cluster")):
+    key = (z, x, y, mode)  
 
     #Cache check
     cached = cache_get(key)
@@ -117,10 +120,44 @@ SELECT ST_AsMVT(temp, 'points', 4096, 'geom') AS mvt
 FROM temp;
 """
 
+    sql_cluster = """
+WITH env AS (
+    SELECT ST_TileEnvelope(%s, %s, %s) AS geom_3857
+),
+temp AS (
+    SELECT
+        COUNT(*) AS count,
+        ST_AsMVTGeom(
+            ST_Centroid(ST_Collect(public.points.geom_3857)),
+            env.geom_3857,
+            4096,
+            0,
+            true
+        ) AS geom
+    FROM public.points
+    CROSS JOIN env
+    WHERE public.points.geom_3857 && env.geom_3857
+    GROUP BY ST_SnapToGrid(public.points.geom_3857, %s), env.geom_3857  -- FIX: include env.geom_3857 so it's legal
+)
+SELECT ST_AsMVT(temp, 'points', 4096, 'geom') AS mvt
+FROM temp;
+"""
+    CLUSTER_MAX_ZOOM = 11
+    grid = max(50, 2000 - 150 * z)  # meters; tune constants
+
+
+    if mode == "cluster" and z <= CLUSTER_MAX_ZOOM:
+        sql_to_run = sql_cluster
+        grid = max(50, 2000 - 150 * z)  # or whatever you pick
+        params = (z, x, y, grid)
+    else:
+        sql_to_run = sql
+        params = (z, x, y, CENTER_LON, CENTER_LAT)
+
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            params = (z, x, y, CENTER_LON, CENTER_LAT)
-            cur.execute(sql, params)
+            cur.execute(sql_to_run, params)
+
             row = cur.fetchone()
             mvt_data = row[0] if row and row[0] else b""
 

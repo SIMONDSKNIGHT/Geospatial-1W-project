@@ -11,29 +11,33 @@ Project that aligns to the criteria listed in the take home assessment requireme
     - uses predictable schema of GEOM with additional values for debugging
 - **Frontend**
     - interactive map interface with panning, zooming completed with the help of maplibre.
-    - performance of rendering dots was initially poor, with excessive CPU draw, but has been reduced with usage of psycopg pool to _ as well as optimisations to SQL query.
-    - visual clarity at different zoom levels is currently not something addressed, but would likely be improved with a LOD of the map. The points themselves reduce in density with zoom and so remain viewable regardless.
+    - performance of rendering dots was initially poor, with excessive CPU draw, but has been reduced with usage of psycopg pool as well as optimisations to SQL query and tile generation.
+    - visual clarity at different zoom levels is now partially addressed through a simple LOD-style approach using server-side grid-based clustering.
+    - clustering can be toggled on and off from the frontend, and is automatically disabled above a certain zoom level so individual points can still be inspected without ambiguity.
 
 ## Tech Selection
 
 
 ### Database
 - **PostgreSQL + PostGIS**
-  - Stores generated point data in WGS84 (EPSG:4326)
-  - /* add something about how the format makes it quick to do operations with
-  - PostGIS used as is required of the spec, helping with quick calculations
+  - Stores generated point data in WGS84 (EPSG:4326) 
+  - PostGIS used as required by the spec, allowing for fast spatial filtering, distance calculations, and geometry operations directly in the database.
+  - geometry is additionally stored in EPSG:3857 to speed up recall during tile generation and spatial filtering.
 
 ### Backend
 - **Python (FastAPI)**
   - Serves Mapbox Vector Tiles (MVT) on demand
   - Returns the data required for the current map viewport
   - Dockerized
+  - lightweight tile caching used to reduce repeated tile generation during normal interaction
+  - server side clustering logic to reduce feature counts at low zoom levels
 
 ### Frontend
 - **MapLibre GL JS**
   - WebGL-based rendering of vector tiles
   - Smooth pan and zoom interactions
-  - very basic HTML/JS.
+  - basic HTML/JS.
+  - clustering toggle rebuilds the vector tile source to explicitly request clustered or raw tiles from the backend
 
 ### Infrastructure
 - **Docker & Docker Compose**
@@ -51,12 +55,15 @@ Project that aligns to the criteria listed in the take home assessment requireme
 2. **Storage**
    - Points stored in a PostGIS table with a geometry column
    - GiST spatial index used for fast bounding-box queries
+   - additional geometry stored in EPSG:3857 to support efficient tile envelope filtering without runtime reprojection
 
 3. **Backend Tile Service**
    - Frontend requests tiles using `{z}/{x}/{y}` URLs
-   - Backend constructs a tile envelope
+   - Backend constructs a tile envelope in Web Mercator
    - Points are spatially filtered by bounding box
    - Results are encoded as Mapbox Vector Tiles (PBF)
+   - optional grid-based aggregation is applied at lower zoom levels when clustering is enabled
+   - clustered and raw tiles are cached independently to avoid stale results when toggling modes
 
 4. **Frontend Rendering**
    - MapLibre requests tiles based on viewport and zoom level
@@ -75,29 +82,39 @@ Project that aligns to the criteria listed in the take home assessment requireme
   - Efficient bounding-box filtering in PostGIS
 - **Viewport-driven loading**
   - No full-dataset fetch at any point
+- **Server-side grid-based clustering**
+  - Points grouped using a simple spatial grid at low zoom levels
+  - Reduces number of features returned per tile and lowers draw overhead
+  - Automatically disabled above a defined zoom threshold
+- **In-memory tile caching**
+  - Frequently requested tiles cached in-process
+  - Cache key includes tile coordinates and render mode (clustered vs raw)
+  - Significantly reduces redundant database work during panning and repeated navigation
 
-
-- The application is smooth during pan/zoom (this is not my work, this is )
-- Rapid zooming causes database CPU usage spikes due to:
+- The application is smooth during pan/zoom (this is largely MapLibre/WebGL doing the heavy lifting)
+- Rapid zooming can still cause database CPU usage spikes due to:
   - Multiple concurrent tile requests
-  - Per-tile geometry transformation and MVT encoding
+  - Per-tile geometry filtering and MVT encoding
   - resultant effect of sharp unloaded zones when zooming in and out rapidly
     - not dissimilar to own experience when using competitor map services
-- This behavior is expected when generating vector tiles on demand without caching or aggregation
+- This behaviour is expected when generating vector tiles on demand, even with caching, under aggressive interaction patterns
 
 ### Future Improvements
-- Precompute and store geometries to avoid transforming with every request
-- add grid-based clustering to reduce calculations
-- Optimise database connection pool to reduce connection overhead
+- Precompute and store additional aggregates for very low zoom levels
+- move tile caching out of process (e.g. Redis or CDN-backed)
+- further tune grid sizes per zoom level
+- decouple frontend hosting from backend API
 
 ### Attempted improvements
-- Some attempt made at trying to get different LOD levels, unfortunately, currently they do not load fast enough in my implementation to work without making zooming feel very choppy, and so were removed.
+- Some attempt made at trying to get more complex LOD behaviour. While functional, this caused noticeable choppiness during zooming and was removed in favour of a simpler, more predictable grid-based approach.
 
 ---
 
 ## Visual Clarity at Scale
 
-in future a LOD system would be beneficial, both for visual clarity (increase detail on ground as camera zooms) as at close zoom levels, lack of local detail impedes navigation, and additionally LOD for points such as grouping them at distance. The advantage of this would be obvious performance increases, at no cost of visual fidelity at those zoom levels.
+At large scales (zoomed out), visual clarity benefits from grouping points to avoid excessive overlap and overdraw. This is now partially addressed via optional server-side clustering, which improves readability and performance when viewing the dataset at distance.
+
+At closer zoom levels, clustering is disabled so individual points remain visible and interactable, preserving local detail and usability.
 
 ---
 
@@ -106,23 +123,23 @@ in future a LOD system would be beneficial, both for visual clarity (increase de
 
 ### Metric correctness vs implementation simplicity
 
-It would be marginally more computationally expensive to figure out whether the variance of a point should be smaller the larger the absolute longitude was for a given point, but for the spec, I decided against it and so we just work with the relative values at the POI
+It would be more computationally expensive to account for longitudinal distortion. For the purposes of a takehome task, distances and deviations are instead treated relative to the point of interest.
 
 ### Vector tiles over pre-clustering
 
-Vector tiles are probably more intensive as the number of points increases but given the spec, thsi technique was used over clustering
+Vector tiles generated on demand are more computationally expensive as dataset size grows, but this approach was chosen over absoluete clustering to keep the pipeline flexible and implementation time reasonable.
 
 ### Python over a faster systems language
 
-Python was used as the operational bottleneck while the primary performance bottleneck is on the database side, so I decided to just use the language I was more familiar with.
+Python was used in spite of slower speed as because  primary performance bottleneck is on the database side, any difference in the code speed was marginal. My greater familiarity with python and FastAPI allowed faster development without materially impacting overall system performance.
 
-### MapLibre and plain JS over React
+### MapLibre and plain JS over frontend framework
 
-Given the restrictions of the  A framework would be justified for a more application-heavy interface.
+Aa framework was not introduced. Plain JS was sufficient and looks pretty good to boot. but is inflexible
 
 ### Frontend served by backend container
 
-Serving frontend assets from the backend simplifies deployment and aligns with the take-home scope, at the cost of scalability compared to a dedicated static hosting layer.
+deploying frontend from the backend simplifies deployment and aligns with the take home scope at the cost of scalability compared to a dedicated static hosting layer, and also looking very ugly
 
 
 ## Running Locally
@@ -132,22 +149,7 @@ Generate the 100k points first throught the script in scripts
 ```bash
 python scripts/generator.py --n 100000 --center-lat 51.5074 --center-lon -0.1278 --std-km 10  --output-file data/points_100k.csv --seed 42
 ```
-
-run the below on the TAKEHOMEGDV directory to create dockerised db and backend.
+then 
 ```bash
 docker compose up --build
 ```
-
-
-## Additional notes
-
-Differences in performance from my own may arise from the platform (likely improvements); Docker image used for the postGIS is amd64, and technically incompatible for MAC, but ran well enough for this project.
-
-
-## Section on bonus task
-
-
-### Implementation
-
-Not the cleanest: The points are hardcoded into the main.py as the variables **CENTER_LON** and **CENTER_LAT**, and cannot be changed without a full restart of the environment. Potentially in a full implementation it would make sense to have a settings table that could be changed and then injected into the query, or a point determined and dynamically changed with the distances changing with. An alternative solution was to precalculate the value, but as these would only calculate for 1 point each time, I thought calculating it through the query was not a poor compromise.
-git log -10 --format="%at" | xargs -I{} date -d @{} +%Y/%m/%d_%H:%M:%S
