@@ -1,5 +1,4 @@
-### TakeHomeGDV
-Take home task for demonstration of technical skills.
+
 ![Map preview](img/file.png)
 # Geospatial Data Visualisation App
 Project that aligns to the criteria listed in the take home assessment requirements.:
